@@ -4,7 +4,6 @@ date
 
 . ./cmd.sh  # Needed for local or cluster-based processing
 . ./path.sh # Needed for KALDI_ROOT, REC_ROOT and WAV_ROOT
-
 . ./local/check_prerequisites.sh || exit 1
 
 stage=0
@@ -25,7 +24,7 @@ subfolders_test="isolated"
 subfolders_devel="isolated"
 
 # Parse external parameters into bash variables
-. ./utils/parse_options.sh || exit 1;
+. parse_options.sh 
 
 featdir=$REC_ROOT/$feat
 
@@ -211,37 +210,66 @@ chunk_right_context=0
 # training options
 srand=0
 remove_egs=false
+data=$REC_ROOT/data
+if [ $stage -le 4 ]; then
+	echo "preparing directory for speed-perturbed data"
+	./utils/data/perturb_data_dir_speed_3way.sh $data/${audio_feat}/${train_set} $data/${audio_feat}/${train_set}_sp_vol
+	./utils/data/perturb_data_dir_speed_3way.sh $data/${audio_feat}/${train_set} $data/${audio_feat}/${train_set}_sp
+	./utils/data/perturb_data_dir_volume.sh $data/${audio_feat}/${train_set}_sp_vol
+	./utils/fix_data_dir.sh $data/${audio_feat}/${train_set}_sp
+fi
 
-echo "skip speed-perturbed & volume training data because of fixed video speed"
-#if [ $stage -le 4 ]; then
-#	echo "preparing directory for speed-perturbed data"
-#	./utils/data/perturb_data_dir_speed_3way.sh ./data/${audio_feat}/${train_set} ./data/${audio_feat}/${train_set}_sp_vol
-#	./utils/data/perturb_data_dir_speed_3way.sh ./data/${audio_feat}/${train_set} ./data/${audio_feat}/${train_set}_sp
-#	./utils/data/perturb_data_dir_volume.sh ./data/${audio_feat}/${train_set}_sp_vol
-#	./utils/fix_data_dir.sh ./data/${audio_feat}/${train_set}_sp
-#fi
-#
-#if [ $stage -le 5 ]; then
-#	echo "make fbank features for speed-perturbed and volume"
-#	$steps/make_fbank.sh --nj $nj --cmd "$train_cmd" --fbank_config conf/fbank.conf ./data/${audio_feat}/${train_set}_sp_vol|| exit 1
-#	# Compute CMVN stats
-#	$steps/compute_cmvn_stats.sh ./data/${audio_feat}/${train_set}_sp_vol || exit 1
-#
-#	$steps/make_fbank.sh --nj $nj --cmd "$train_cmd" --fbank_config conf/fbank.conf ./data/${audio_feat}/${train_set}_sp|| exit 1
-#	# Compute CMVN stats
-#	$steps/compute_cmvn_stats.sh ./data/${audio_feat}/${train_set}_sp || exit 1
-#fi
-# perturbed 후 audio fbank까지만 구현
+if [ $stage -le 5 ]; then
+	if [ ! -d ./video/train/isolated/sp0.9-id1 ]; then
+		cat ./dup_list | parallel --eta 
+	fi
+
+	echo "make sp fbank and append audio & video feature"
+	# Compute fbank feature
+	$steps/make_fbank.sh --nj $nj --cmd "$train_cmd" --fbank_config conf/fbank.conf $data/$audio_feat/${train_set}_sp $exp/make_fbank_sp $REC_ROOT/fbank_sp
+	$steps/make_fbank.sh --nj $nj --cmd "$train_cmd" --fbank_config conf/fbank.conf $data/$audio_feat/${train_set}_sp_vol $exp/make_fbank_sp_vol $REC_ROOT/fbank_sp_vol
+
+	# Compute CMVN stats
+	$steps/compute_cmvn_stats.sh $data/$audio_feat/${train_set}_sp $exp/make_fbank_sp $REC_ROOT/fbank_sp
+	$steps/compute_cmvn_stats.sh $data/$audio_feat/${train_set}_sp_vol $exp/make_fbank_sp_vol $REC_ROOT/fbank_sp_vol
+	
+	cp -r $data/${audio_feat}/${train_set}_sp $data/video_sp
+
+	# make video feat.scp 
+	video_sp=$REC_ROOT/video_sp
+	local/make_video_sp.sh --nj $nj \
+		--cmd "$train_cmd" \
+		--audioRoot $REC_ROOT/wav \
+		--videoRoot $VIDEO_ROOT \
+		$data/video_sp \
+		$exp/make_video_sp/$x \
+		$video_sp
+
+	$steps/compute_cmvn_stats.sh  $data/video_sp $exp/make_video_sp/$x $video_sp
+
+	mkdir -p $data/append_sp
+	mkdir -p $data/append_sp_vol
+
+	# Append audio/video features
+	$steps/append_feats.sh --nj $nj --cmd "$train_cmd" \
+		$data/$audio_feat/${train_set}_sp $data/video_sp \
+		$data/append_sp $exp/make_append_sp $REC_ROOT/append_sp
+    
+	$steps/append_feats.sh --nj $nj --cmd "$train_cmd" \
+		$data/$audio_feat/${train_set}_sp_vol $data/video_sp \
+		$data/append_sp_vol $exp/make_append_sp_vol $REC_ROOT/append_sp_vol
+
+	$steps/compute_cmvn_stats.sh $data/append_sp $exp/make_append_sp $REC_ROOT/append_sp
+	$steps/compute_cmvn_stats.sh $data/append_sp_vol $exp/make_append_sp_vol $REC_ROOT/append_sp_vol
+
+fi
 
 lat_dir=exp/${feat}/chain${nnet3_affix}/${gmm}_${train_set}_sp_lat
 gmm_dir=exp/${feat}/${gmm}
 ali_dir=exp/${feat}/${gmm}_ali_${train_set}_sp
 dir=exp/${feat}/chain${nnet3_affix}/tdnn${affix}_sp
-#train_data_dir=data/${feat}/${train_set}_sp_vol
-#lores_train_data_dir=data/${feat}/${train_set}_sp
-
-train_data_dir=data/${feat}/${train_set}
-lores_train_data_dir=data/${feat}/${train_set}
+train_data_dir=$REC_ROOT/data/append_sp_vol
+lores_train_data_dir=$REC_ROOT/data/append_sp
 
 # note: you don't necessarily have to change the treedir name
 # each time you do a new experiment-- only if you change the
@@ -252,10 +280,10 @@ tree_dir=exp/${feat}/chain${nnet3_affix}/tree_a_sp
 # you should probably name it differently.
 lang=data/lang_chain
 
-if [ $stage -le 4  ]; then
+if [ $stage -le 6  ]; then
 	echo "aligning with the perturbed low-resolution data"
 	steps/align_fmllr.sh --nj $nj --cmd "$train_cmd" \
-		data/${feat}/${train_set} data/lang $gmm_dir $ali_dir
+		 $lores_train_data_dir data/lang $gmm_dir $ali_dir
 
 	for f in $train_data_dir/feats.scp \
 		$lores_train_data_dir/feats.scp $gmm_dir/final.mdl \
@@ -264,8 +292,7 @@ if [ $stage -le 4  ]; then
 	done
 fi
 
-
-if [ $stage -le 5  ]; then
+if [ $stage -le 7  ]; then
 echo "$0: creating lang directory $lang with chain-type topology"
 # Create a version of the lang/ directory that has one state per phone in the
 # topo file. [note, it really has two states.. the first one is only repeated
@@ -288,7 +315,7 @@ else
     fi
 fi
 
-if [ $stage -le 6  ]; then
+if [ $stage -le 8  ]; then
 	# Get the alignments as lattices (gives the chain training more freedom).
 	# use the same num-jobs as the alignments
 	steps/align_fmllr_lats.sh --nj $nj --cmd "$train_cmd" ${lores_train_data_dir} \
@@ -296,7 +323,7 @@ if [ $stage -le 6  ]; then
 	rm $lat_dir/fsts.*.gz # save space
 fi
 
-if [ $stage -le 7  ]; then
+if [ $stage -le 9  ]; then
 	# Build a tree using our new topology.  We know we have alignments for the
 	# speed-perturbed data (local/nnet3/run_ivector_common.sh made them), so use
 	# those.  The num-leaves is always somewhat less than the num-leaves from
@@ -313,7 +340,7 @@ if [ $stage -le 7  ]; then
 		$lang $ali_dir $tree_dir
 fi
 
-if [ $stage -le 8  ]; then
+if [ $stage -le 10  ]; then
 	mkdir -p $dir
 	echo "$0: creating neural net configs using the xconfig parser";
 
@@ -359,7 +386,7 @@ EOF
 fi
 
 
-if [ $stage -le 9  ]; then
+if [ $stage -le 11  ]; then
 	if [[ $(hostname -f) == *.clsp.jhu.edu  ]] && [ ! -d $dir/egs/storage  ]; then
 		utils/create_split_dir.pl \
 			/export/b0{3,4,5,6}/$USER/kaldi-data/egs/chime4-$(date +'%m_%d_%H_%M')/s5/$dir/egs/storage $dir/egs/storage
@@ -377,8 +404,8 @@ if [ $stage -le 9  ]; then
 		--trainer.max-param-change=2.0 \
 		--trainer.num-epochs=6 \
 		--trainer.frames-per-iter=3000000 \
-		--trainer.optimization.num-jobs-initial=2 \
-		--trainer.optimization.num-jobs-final=2 \
+		--trainer.optimization.num-jobs-initial=1 \
+		--trainer.optimization.num-jobs-final=1 \
 		--trainer.optimization.initial-effective-lrate=0.003 \
 		--trainer.optimization.final-effective-lrate=0.0003 \
 		--trainer.optimization.shrink-value=1.0 \
@@ -402,7 +429,7 @@ if [ $stage -le 9  ]; then
 fi
 
 
-if [ $stage -le 10  ]; then
+if [ $stage -le 12  ]; then
 	# The reason we are using data/lang here, instead of $lang, is just to
 	# emphasize that it's not actually important to give mkgraph.sh the
 	# lang directory with the matched topology (since it gets the
@@ -420,7 +447,7 @@ if [ $stage -le 10  ]; then
 		$tree_dir $tree_dir/graph || exit 1;
 fi
 
-if [ $stage -le 11  ]; then
+if [ $stage -le 13  ]; then
 	frames_per_chunk=$(echo $chunk_width | cut -d, -f1)
 	rm $dir/.error 2>/dev/null || true
 
