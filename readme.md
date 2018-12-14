@@ -26,11 +26,11 @@ LipNet의 script/extract_mouth_batch.py 를 사용하며, 이때 predict는 shap
 ## 2.2 CNN-VAE feature
 ### 2.2.1 Training
 CNN기반 Variance AutoEncoder를 적절한 training을 하기 위하여 PyTorch를 기반으로 스크립트를 작성하였으며, Encoder로 ReLU함수를 activation function으로 하는 Convolution 4 Layer를 사용하였고 그 후 Fully Connected 3 Layer, Decoder또한 Encoder와 비슷하게 4 Layer로 구성하였다.
-이후 Epoch 50회 Training하였다.
+이후 Epoch 50회 Training하였다. (CNN-VAE.py)
 ![image](https://user-images.githubusercontent.com/39906282/49982487-1e1f0600-ffa0-11e8-947b-6bc685e6cf49.png)
 
 ### 2.2.2 Feature Extraction
-2.1에서 추출한 Lip Image를 2.2.1에서 Training 시킨 모델의 입력으로 하고 출력을 bottleneck에서 구하면 feature로 사용할 수 있다.
+2.1에서 추출한 Lip Image를 2.2.1에서 Training 시킨 모델의 입력으로 하고 출력을 bottleneck에서 구하면 feature로 사용할 수 있다. (feat_extract_CNN_VAE.py)
 
 ## 2.2 Modifying features to fit the Kaldi type
 frame단위로 추출한 features를 utterance 단위로 합치고, 이를 kaldi에서 인식할 수 있도로 구분자와 utterance_ID를 삽입하여 형태를 맞춰준다. (writeFeatures.py)
