@@ -1,5 +1,6 @@
 Audio-Visual Speech Recognition using chain model in kaldi toolkit 
 ==================================================================
+
 # 1. DB 
 
 ## 1.1. Audio
@@ -48,7 +49,7 @@ chain model (kaldi/nnet3)는 decoding 속도를 빠르게 하기 위해 tri-stat
 ## 3.1. Audio Featrues
 Audio Feature는 mel-spectrum 40차를 사용하였다. 이 feature를 사용하는 backgound data는 아래와 같다.
 아래 결과를 바탕으로 computational complexity와 dimension을 고려하여 결정하였다.
-![image](https://user-images.githubusercontent.com/39906282/49985041-ddc68480-ffad-11e8-9e88-534b7b85d67f.png)
+![image](https://user-images.githubusercontent.com/39906282/49985427-3ea28c80-ffaf-11e8-9422-95933d20347d.png)
 
 ## 3.2. Model
 Daniel Povey 교수의 chain모델을 사용하였으며, 이는 kaldi toolkit의 nnet3에 있다.
